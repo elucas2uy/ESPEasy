@@ -1,3 +1,5 @@
+#include <ArduinoJson.h>
+
 //********************************************************************************
 // Interface for Sending to Controllers
 //********************************************************************************
@@ -88,23 +90,49 @@ void callback(char* c_topic, byte* b_payload, unsigned int length) {
   CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_RECV, &TempEvent, dummyString);
 }
 
-
 /*********************************************************************************************\
  * Connect to MQTT message broker
 \*********************************************************************************************/
-void MQTTConnect()
+void MQTTConnect(PubSubClient& _mqttClient, byte ProtIndex)
 {
+  String log = "";
   ControllerSettingsStruct ControllerSettings;
-  LoadControllerSettings(0, (byte*)&ControllerSettings, sizeof(ControllerSettings)); // todo index is now fixed to 0
+  LoadControllerSettings(ProtIndex, (byte*)&ControllerSettings, sizeof(ControllerSettings)); // todo index is now fixed to 0 --> ProtIndex
 
   IPAddress MQTTBrokerIP(ControllerSettings.IP);
-  MQTTclient.setServer(MQTTBrokerIP, ControllerSettings.Port);
-  MQTTclient.setCallback(callback);
+  _mqttClient.setServer(MQTTBrokerIP, ControllerSettings.Port);
+  //MQTTclient.setServer("guzuir.messaging.internetofthings.ibmcloud.com", 1883);
+  _mqttClient.setCallback(callback);
+
+  /*log=F("MQTT : IP : ");
+  char str[20];
+  sprintf_P(str, PSTR("%u.%u.%u.%u"), ControllerSettings.IP[0], ControllerSettings.IP[1], ControllerSettings.IP[2], ControllerSettings.IP[3]);
+  log+= str;
+  log+=F(" - ");
+  log+=ControllerSettings.Port;
+  addLog(LOG_LEVEL_ERROR, log);*/
 
   // MQTT needs a unique clientname to subscribe to broker
-  String clientid = "ESPClient";
-  clientid += Settings.Unit;
+
+  /**/
+  String Device_Id = ControllerSettings.Device_Id;
+  String clientid = "";
+  if (Device_Id.length() == 0)
+  {
+    clientid = "ESPClient";
+    clientid += Settings.Unit;
+  }
+  else
+  {
+    clientid = "d:";
+    clientid += ControllerSettings.Org;
+    clientid += ":";
+    clientid += ControllerSettings.Device_type;
+    clientid += ":";
+    clientid += ControllerSettings.Device_Id;
+  }
   String subscribeTo = "";
+
 
   String LWTTopic = ControllerSettings.Subscribe;
   LWTTopic.replace(F("/#"), F("/status"));
@@ -112,26 +140,71 @@ void MQTTConnect()
 
   for (byte x = 1; x < 3; x++)
   {
-    String log = "";
+
     boolean MQTTresult = false;
 
-    if ((SecuritySettings.ControllerUser[0] != 0) && (SecuritySettings.ControllerPassword[0] != 0))
-      MQTTresult = MQTTclient.connect(clientid.c_str(), SecuritySettings.ControllerUser[0], SecuritySettings.ControllerPassword[0], LWTTopic.c_str(), 0, 0, "Connection Lost");
+    if ((SecuritySettings.ControllerUser[ProtIndex] != 0) && (SecuritySettings.ControllerPassword[ProtIndex] != 0))
+      {
+        if (Device_Id.length() == 0)
+          MQTTresult = _mqttClient.connect(clientid.c_str(), SecuritySettings.ControllerUser[ProtIndex], SecuritySettings.ControllerPassword[ProtIndex], LWTTopic.c_str(), 0, 0, "Connection Lost");
+        else
+          {
+            MQTTresult = MQTTclient_C012.connect(clientid.c_str(), SecuritySettings.ControllerUser[ProtIndex], SecuritySettings.ControllerPassword[ProtIndex]);
+            log=F("MQTT (C012): Connect(1) : ");
+            log+=clientid.c_str();
+            log+=F(" - ");
+            log+=SecuritySettings.ControllerUser[ProtIndex];
+            log+=F(" - ");
+            log+=SecuritySettings.ControllerPassword[ProtIndex];
+            addLog(LOG_LEVEL_ERROR, log);
+          }
+    }
     else
+    {
       MQTTresult = MQTTclient.connect(clientid.c_str(), LWTTopic.c_str(), 0, 0, "Connection Lost");
+      /*log=F("MQTT : Connect(2) : ");
+      log+=clientid.c_str();
+      log+=F(" - ");
+      log+=LWTTopic.c_str();
+      addLog(LOG_LEVEL_ERROR, log);*/
+    }
+
 
     if (MQTTresult)
     {
       log = F("MQTT : Connected to broker");
-      addLog(LOG_LEVEL_INFO, log);
-      subscribeTo = ControllerSettings.Subscribe;
-      subscribeTo.replace(F("%sysname%"), Settings.Name);
-      MQTTclient.subscribe(subscribeTo.c_str());
-      log = F("Subscribed to: ");
-      log += subscribeTo;
-      addLog(LOG_LEVEL_INFO, log);
 
-      MQTTclient.publish(LWTTopic.c_str(), "Connected");
+      if (Device_Id.length() == 0)
+      {
+        addLog(LOG_LEVEL_INFO, log);
+        subscribeTo = ControllerSettings.Subscribe;
+        subscribeTo.replace(F("%sysname%"), Settings.Name);
+        MQTTclient.subscribe(subscribeTo.c_str());
+        log = F("Subscribed to: ");
+        log += subscribeTo;
+        addLog(LOG_LEVEL_INFO, log);
+
+        MQTTclient.publish(LWTTopic.c_str(), "Connected");
+      }
+      else
+      {
+        StaticJsonBuffer<300> jsonBuffer;
+        JsonObject& root = jsonBuffer.createObject();
+        JsonObject& d = root.createNestedObject("d");
+        JsonObject& metadata = d.createNestedObject("metadata");
+        metadata["publishInterval"] = 300000;
+        JsonObject& supports = d.createNestedObject("supports");
+        supports["deviceActions"] = true;
+
+        char buff[300];
+        root.printTo(buff, sizeof(buff));
+        Serial.println("MQTT (C012): publishing device metadata:"); Serial.println(buff);
+        if (MQTTclient_C012.publish(LWTTopic.c_str(), buff)) {
+          Serial.println("device Publish ok");
+        } else {
+          Serial.println("device Publish failed:");
+        }
+      }
 
       statusLED(true);
       break; // end loop if succesfull
@@ -152,19 +225,48 @@ void MQTTConnect()
 \*********************************************************************************************/
 void MQTTCheck()
 {
+// todo index is now fixed to 0
+// Aca hay que recorer todos los controladores, verificando si usan MQTT y si estan habilitados par aluego revisar si estan conectados o si necsitan re-coneccion.
   byte ProtocolIndex = getProtocolIndex(Settings.Protocol[0]);
-  if (Protocol[ProtocolIndex].usesMQTT)
+  if ((Protocol[ProtocolIndex].usesMQTT) and (Settings.ControllerEnabled[0]))
     if (!MQTTclient.connected())
     {
-      String log = F("MQTT : Connection lost");
-      addLog(LOG_LEVEL_ERROR, log);
+      String log = F("MQTT : Connection lost (ProtocolIndex:");
+      log += ProtocolIndex;
+      log += F(" )");      addLog(LOG_LEVEL_ERROR, log);
       connectionFailures += 2;
       MQTTclient.disconnect();
       delay(1000);
-      MQTTConnect();
+      MQTTConnect(MQTTclient,0);
     }
     else if (connectionFailures)
       connectionFailures--;
+
+// hay que ver si podemos integrar al codigo anterior, y tambien evaluar si podemos hacer que el MQTT Client pase a estar siempre en el controler....
+    for (byte x = 0; x < CONTROLLER_MAX; x++)
+    {
+      if ((getProtocolIndex(Settings.Protocol[x])==10) and (Settings.ControllerEnabled[x]))
+      {
+        if (!MQTTclient_C012.connected())
+        {
+          String log = F("MQTT (C012): Connection lost (Protocol Name:");
+
+          String ProtocolName = "";
+          CPlugin_ptr[ProtocolIndex](CPLUGIN_GET_DEVICENAME, 0, ProtocolName);
+          log += ProtocolName;
+          //log += ProtocolIndex;
+          log += F(")");
+          addLog(LOG_LEVEL_ERROR, log);
+          connectionFailures += 2;
+          MQTTclient_C012.disconnect();
+          delay(1000);
+          MQTTConnect(MQTTclient_C012,x);
+        }
+        else if (connectionFailures)
+          connectionFailures--;
+        }
+      }
+
 }
 
 
@@ -196,7 +298,7 @@ void SendStatus(byte source, String status)
 void MQTTStatus(String& status)
 {
   ControllerSettingsStruct ControllerSettings;
-  LoadControllerSettings(0, (byte*)&ControllerSettings, sizeof(ControllerSettings)); // todo index is now fixed to 0
+  LoadControllerSettings(1, (byte*)&ControllerSettings, sizeof(ControllerSettings)); // todo index is now fixed to 1
 
   String pubname = ControllerSettings.Subscribe;
   pubname.replace(F("/#"), F("/status"));

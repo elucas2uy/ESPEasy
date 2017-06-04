@@ -121,7 +121,7 @@ void getWebPageTemplateDefault(const String& tmplName, String& tmpl)
         "<br/>{{menu}}<br/>"
         "{{error}}"
         "{{content}}"
-        "<BR><h6>Powered by www.letscontrolit.com</h6>"
+        "<BR><h6>Powered by www.letscontrolit.com (Custom EL)</h6>"
       "</body>"
     );
   }
@@ -613,6 +613,9 @@ void handle_controllers() {
   String controllersubscribe = WebServer.arg(F("controllersubscribe"));
   String controllerpublish = WebServer.arg(F("controllerpublish"));
   String controllerenabled = WebServer.arg(F("controllerenabled"));
+  String controllerOrg = WebServer.arg(F("controllerOrg"));
+  String controllerDeviceType = WebServer.arg(F("controllerDeviceType"));
+  String controllerDeviceId = WebServer.arg(F("controllerDeviceId"));
 
   String reply = "";
   addHeader(true, reply);
@@ -631,8 +634,13 @@ void handle_controllers() {
         CPlugin_ptr[ProtocolIndex](CPLUGIN_PROTOCOL_TEMPLATE, &TempEvent, dummyString);
       strncpy(ControllerSettings.Subscribe, TempEvent.String1.c_str(), sizeof(ControllerSettings.Subscribe));
       strncpy(ControllerSettings.Publish, TempEvent.String2.c_str(), sizeof(ControllerSettings.Publish));
+      strncpy(SecuritySettings.ControllerUser[index - 1], TempEvent.String4.c_str(), sizeof(SecuritySettings.ControllerUser[0]));
+      //strncpy(ControllerSettings.HostName, TempEvent.String3.c_str(), sizeof(ControllerSettings.HostName));
+
       TempEvent.String1 = "";
       TempEvent.String2 = "";
+      TempEvent.String3 = "";
+      TempEvent.String4 = "";
     }
     else
     {
@@ -662,11 +670,14 @@ void handle_controllers() {
 
         Settings.ControllerEnabled[index - 1] = (controllerenabled == "on");
         ControllerSettings.Port = controllerport.toInt();
-        strncpy(SecuritySettings.ControllerUser[index - 1], controlleruser.c_str(), sizeof(SecuritySettings.ControllerUser[index - 1]));
+        strncpy(SecuritySettings.ControllerUser[index - 1], controlleruser.c_str(), sizeof(SecuritySettings.ControllerUser[0]));
         //strncpy(SecuritySettings.ControllerPassword[index - 1], controllerpassword.c_str(), sizeof(SecuritySettings.ControllerPassword[0]));
-        copyFormPassword(F("controllerpassword"), SecuritySettings.ControllerPassword[index - 1], sizeof(SecuritySettings.ControllerPassword[index - 1]));
+        copyFormPassword(F("controllerpassword"), SecuritySettings.ControllerPassword[index - 1], sizeof(SecuritySettings.ControllerPassword[0]));
         strncpy(ControllerSettings.Subscribe, controllersubscribe.c_str(), sizeof(ControllerSettings.Subscribe));
         strncpy(ControllerSettings.Publish, controllerpublish.c_str(), sizeof(ControllerSettings.Publish));
+        strncpy(ControllerSettings.Org, controllerOrg.c_str(), sizeof(ControllerSettings.Org));
+        strncpy(ControllerSettings.Device_type, controllerDeviceType.c_str(), sizeof(ControllerSettings.Device_type));
+        strncpy(ControllerSettings.Device_Id, controllerDeviceId.c_str(), sizeof(ControllerSettings.Device_Id));
       }
     }
     SaveControllerSettings(index - 1, (byte*)&ControllerSettings, sizeof(ControllerSettings));
@@ -731,7 +742,7 @@ void handle_controllers() {
         ProtocolName,
         Protocol[x].Number,
         choice == Protocol[x].Number,
-        !((index == 1) || !Protocol[x].usesMQTT),
+        !((index == 1) || !Protocol[x].usesMQTT || Protocol[x].usesMQTT),
         F(""));
     }
     addSelector_Foot(reply);
@@ -785,6 +796,21 @@ void handle_controllers() {
       }
 
       addFormCheckBox(reply, F("Enabled"), F("controllerenabled"), Settings.ControllerEnabled[index - 1]);
+
+// reviser la estrategia
+      if (Protocol[ProtocolIndex].usesTemplate || Protocol[ProtocolIndex].usesMQTT)
+      {
+      	addFormTextBox(reply, F("Controller Org"), F("controllerOrg"), ControllerSettings.Org, 64);
+      }
+      if (Protocol[ProtocolIndex].usesTemplate || Protocol[ProtocolIndex].usesMQTT)
+      {
+        addFormTextBox(reply, F("Device Type"), F("controllerDeviceType"), ControllerSettings.Device_type, 64);
+      }
+      if (Protocol[ProtocolIndex].usesTemplate || Protocol[ProtocolIndex].usesMQTT)
+      {
+      	addFormTextBox(reply, F("Device ID"), F("controllerDeviceId"), ControllerSettings.Device_Id, 64);
+      }
+      // fin revisar
 
       TempEvent.ControllerIndex = index - 1;
       TempEvent.ProtocolIndex = ProtocolIndex;

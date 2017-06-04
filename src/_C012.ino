@@ -1,14 +1,18 @@
 //#######################################################################################################
-//########################### Controller Plugin 002: Domoticz MQTT ######################################
+//########################### Controller Plugin 012: Domoticz MQTT ######################################
 //#######################################################################################################
 
-#define CPLUGIN_002
-#define CPLUGIN_ID_002         2
-#define CPLUGIN_NAME_002       "Domoticz MQTT"
+#define CPLUGIN_012
+#define CPLUGIN_ID_012         12
+#define CPLUGIN_NAME_012       "IBM Bluemix MQTT"
 
 #include <ArduinoJson.h>
+/*
+// Declare a Wifi client for this plugin only
+WiFiClient espclient_C012;
+PubSubClient MQTTclient_C012(espclient_C012);*/
 
-boolean CPlugin_002(byte function, struct EventStruct *event, String& string)
+boolean CPlugin_012(byte function, struct EventStruct *event, String& string)
 {
   boolean success = false;
 
@@ -16,7 +20,7 @@ boolean CPlugin_002(byte function, struct EventStruct *event, String& string)
   {
     case CPLUGIN_PROTOCOL_ADD:
       {
-        Protocol[++protocolCount].Number = CPLUGIN_ID_002;
+        Protocol[++protocolCount].Number = CPLUGIN_ID_012;
         Protocol[protocolCount].usesMQTT = true;
         Protocol[protocolCount].usesTemplate = true;
         Protocol[protocolCount].usesAccount = true;
@@ -28,14 +32,16 @@ boolean CPlugin_002(byte function, struct EventStruct *event, String& string)
 
     case CPLUGIN_GET_DEVICENAME:
       {
-        string = F(CPLUGIN_NAME_002);
+        string = F(CPLUGIN_NAME_012);
         break;
       }
 
     case CPLUGIN_PROTOCOL_TEMPLATE:
       {
-        event->String1 = F("domoticz/out");
-        event->String2 = F("domoticz/in");
+        event->String1 = F("/Home/#" );
+        event->String2 = F("iot-2/evt/status/fmt/json");
+        event->String3 = F(".messaging.internetofthings.ibmcloud.com");
+        event->String4 = F("use-token-auth");
         break;
       }
 
@@ -69,7 +75,7 @@ boolean CPlugin_002(byte function, struct EventStruct *event, String& string)
             byte ControllerID = 0;
             for (byte i=0; i < CONTROLLER_MAX; i++)
             {
-              if (Settings.Protocol[i] == CPLUGIN_ID_002) { ControllerID = i; }
+              if (Settings.Protocol[i] == CPLUGIN_ID_012) { ControllerID = i; }
             }
             if (Settings.TaskDeviceID[ControllerID][x] == idx) // get idx for our controller index
             {
@@ -230,20 +236,27 @@ boolean CPlugin_002(byte function, struct EventStruct *event, String& string)
 
           String json;
           root.printTo(json);
-          String log = F("MQTT : ");
-          log += json;
-          addLog(LOG_LEVEL_DEBUG, log);
+          String json2 = F("{\"d\":");
+          json2 += json;
+          json2 += F("}");
+          String log = F("MQTT (C012): ");
+          log += json2;
+
+          addLog(LOG_LEVEL_ERROR, log);
 
           String pubname = ControllerSettings.Publish;
-          pubname.replace(F("%sysname%"), Settings.Name);
+          /*pubname.replace(F("%sysname%"), Settings.Name);
           pubname.replace(F("%tskname%"), ExtraTaskSettings.TaskDeviceName);
-          pubname.replace(F("%id%"), String(event->idx));
+          pubname.replace(F("%id%"), String(event->idx));*/
 
-          if (!MQTTclient.publish(pubname.c_str(), json.c_str(), Settings.MQTTRetainFlag))
+          if (!MQTTclient.publish(pubname.c_str(), json2.c_str())) //, Settings.MQTTRetainFlag))
           {
-            log = F("MQTT : publish failed");
-            addLog(LOG_LEVEL_DEBUG, log);
-            MQTTConnect(MQTTclient,0); // todo index is now fixed to 0
+            log = F("MQTT (C012): publish failed - ");
+            log += MQTTclient.connected();
+            log += F(" - ");
+            log += json2.c_str();
+            addLog(LOG_LEVEL_ERROR, log);
+            MQTTCheck();
             connectionFailures++;
           }
           else if (connectionFailures)

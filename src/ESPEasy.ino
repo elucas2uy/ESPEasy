@@ -101,6 +101,7 @@
 //   7 = EmonCMS
 //   8 = Generic HTTP
 //   9 = FHEM HTTP
+//   10 = IBM Bluemix MQTT
 
 #define UNIT                0
 
@@ -322,6 +323,10 @@ DNSServer dnsServer;
 WiFiClient mqtt;
 PubSubClient MQTTclient(mqtt);
 
+// Declare a Wifi client for this plugin only
+WiFiClient espclient_C012;
+PubSubClient MQTTclient_C012(espclient_C012);
+
 // WebServer
 ESP8266WebServer WebServer(80);
 
@@ -432,6 +437,9 @@ struct ControllerSettingsStruct
   char          HostName[65];
   char          Publish[129];
   char          Subscribe[129];
+  char          Org[8];
+  char          Device_type[65];
+  char          Device_Id[8];
 };
 
 struct NotificationSettingsStruct
@@ -478,6 +486,8 @@ struct EventStruct
   byte OriginTaskIndex;
   String String1;
   String String2;
+  String String3;
+  String String4;
   byte *Data;
 };
 
@@ -796,11 +806,19 @@ void setup()
   if (Settings.UDPPort != 0)
     portUDP.begin(Settings.UDPPort);
 
-  // Setup MQTT Client
+  // Setup MQTT Client --- Protocol[0] ORIGINAL
+  // todo index is now fixed to 0
   byte ProtocolIndex = getProtocolIndex(Settings.Protocol[0]);
-  if (Protocol[ProtocolIndex].usesMQTT)
-    MQTTConnect();
+  if ((Protocol[ProtocolIndex].usesMQTT) and (Settings.ControllerEnabled[0]))
+    MQTTConnect(MQTTclient,0);
 
+  // Setup MQTT Client --- Protocol[1] IBM Blumix
+  // todo index is now fixed to 1
+  for (byte x = 0; x < CONTROLLER_MAX; x++)
+  {
+    if ((getProtocolIndex(Settings.Protocol[x])==10) and (Settings.ControllerEnabled[x]))
+      MQTTConnect(MQTTclient_C012,x);
+  }
   sendSysInfoUDP(3);
 
   if (Settings.UseNTP)
